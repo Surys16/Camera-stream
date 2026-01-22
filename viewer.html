@@ -2,36 +2,27 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Game Viewer</title>
-
 <style>
   body {
-    margin:0;
     background:#111;
-    color:white;
-    font-family: Arial, sans-serif;
+    color:#fff;
+    font-family:Arial;
     text-align:center;
+    padding-top:20px;
   }
-  h2 { margin:10px; }
-
-  video, img {
-    width:95%;
-    max-width:480px;
-    margin:8px auto;
-    display:block;
-    border:2px solid #00aaff;
-    border-radius:10px;
-  }
-
-  button {
+  video {
     width:90%;
-    max-width:320px;
-    padding:15px;
-    font-size:18px;
-    margin:10px auto;
+    border:2px solid #00aaff;
+    border-radius:8px;
+  }
+  button {
+    padding:12px 25px;
+    font-size:16px;
+    margin:12px;
     border:none;
-    border-radius:10px;
+    border-radius:6px;
+    cursor:pointer;
     background:#00aaff;
     color:white;
   }
@@ -40,31 +31,21 @@
 
 <body>
 
-<h2>🎮 Game Viewer</h2>
+<h2>👀 Game Viewer</h2>
 
-<!-- VIDEO DARI HP 1 -->
-<video id="remoteVideo" autoplay playsinline></video>
-
-<!-- HASIL SHOOT -->
-<img id="snapshot" />
-
-<!-- KAMERA HP 2 -->
-<video id="localCamera" autoplay playsinline muted></video>
-
-<!-- SWITCH -->
-<button id="switchCam">🔄 Switch Kamera</button>
+<video id="remoteVideo" autoplay playsinline></video><br>
+<button id="shootBtn">📸 Shoot</button>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import { getDatabase, ref, onValue, push, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { getDatabase, ref, onValue, push } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-/* FIREBASE */
 const firebaseConfig = {
   apiKey: "AIzaSyCMD_qYKFZQZveZQL1NX7oj3oFuTsRxaYI",
   authDomain: "camera-stream-15427.firebaseapp.com",
   databaseURL: "https://camera-stream-15427-default-rtdb.firebaseio.com",
   projectId: "camera-stream-15427",
-  storageBucket: "camera-stream-15427.firebasestorage.app",
+  storageBucket: "camera-stream-15427.appspot.com",
   messagingSenderId: "437543558160",
   appId: "1:437543558160:web:32a8d80fdcd95b0568fe95"
 };
@@ -73,59 +54,57 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const room = "room1";
 
-/* ELEMENT */
-const remoteVideo = document.getElementById("remoteVideo");
-const snapshotImg = document.getElementById("snapshot");
-const localCamera = document.getElementById("localCamera");
-const switchBtn = document.getElementById("switchCam");
-
-/* WEBRTC */
 const pc = new RTCPeerConnection({
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+  iceServers: [{ urls:"stun:stun.l.google.com:19302" }]
 });
 
-pc.ontrack = e => remoteVideo.srcObject = e.streams[0];
+const video = document.getElementById("remoteVideo");
+
+pc.ontrack = e => {
+  video.srcObject = e.streams[0];
+};
+
 pc.onicecandidate = e => {
-  if (e.candidate) push(ref(db, room + "/candidates"), e.candidate.toJSON());
+  if (e.candidate) {
+    push(ref(db, room + "/candidates"), e.candidate.toJSON());
+  }
 };
 
 onValue(ref(db, room + "/offer"), async snap => {
   if (!snap.exists()) return;
+
   await pc.setRemoteDescription(snap.val());
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
-  set(ref(db, room + "/answer"), answer);
+  await set(ref(db, room + "/answer"), answer);
 });
 
 onValue(ref(db, room + "/candidates"), snap => {
   snap.forEach(c => {
-    pc.addIceCandidate(c.val()).catch(()=>{});
+    pc.addIceCandidate(new RTCIceCandidate(c.val())).catch(()=>{});
   });
 });
 
-onValue(ref(db, room + "/snapshot"), snap => {
-  if (snap.exists()) snapshotImg.src = snap.val().image;
-});
+// 📸 SHOOT & DOWNLOAD
+document.getElementById("shootBtn").onclick = () => {
+  if (video.readyState < 2) return alert("Video belum siap");
 
-/* SWITCH CAMERA (HP 2) */
-let backCamera = false;
-let localStream;
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
 
-async function startCamera() {
-  if (localStream) localStream.getTracks().forEach(t => t.stop());
-  localStream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: backCamera ? "environment" : "user" }
-  });
-  localCamera.srcObject = localStream;
-}
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(video, 0, 0);
 
-switchBtn.onclick = async () => {
-  backCamera = !backCamera;
-  await startCamera();
+  const img = canvas.toDataURL("image/png");
+
+  const a = document.createElement("a");
+  a.href = img;
+  a.download = "shoot_" + Date.now() + ".png";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 };
-
-// start default camera
-startCamera();
 </script>
 
 </body>
