@@ -29,13 +29,19 @@ const pc = new RTCPeerConnection({
 
 // ---------- ICE Candidate ----------
 pc.onicecandidate = e => {
-  if (e.candidate) push(ref(db, room + "/candidates"), e.candidate.toJSON());
+  if (e.candidate) {
+    push(ref(db, room + "/candidates"), e.candidate.toJSON());
+    console.log("New ICE candidate pushed:", e.candidate);
+  }
 };
 
 // ---------- Remote Video ----------
 pc.ontrack = e => {
   const remote = document.getElementById("remoteVideo");
-  if (remote) remote.srcObject = e.streams[0];
+  if (remote) {
+    remote.srcObject = e.streams[0];
+    console.log("Remote video stream received!");
+  }
 };
 
 // ======================
@@ -48,17 +54,24 @@ if (startBtn) {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       document.getElementById("localVideo").srcObject = stream; // preview hidden
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
+      console.log("Local camera started");
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
+      // simpan OFFER ke Firebase (hanya type + sdp)
       set(ref(db, room + "/offer"), { type: offer.type, sdp: offer.sdp });
+      console.log("Offer sent to Firebase:", offer);
 
+      // listen ANSWER dari HP 2
       onValue(ref(db, room + "/answer"), snap => {
-        if (snap.exists()) pc.setRemoteDescription(snap.val()).catch(err => console.error(err));
+        if (snap.exists()) {
+          pc.setRemoteDescription(snap.val())
+            .then(() => console.log("Answer received and set!"))
+            .catch(err => console.error("Error setting remote description:", err));
+        }
       });
 
-      console.log("Camera streaming started!");
     } catch (err) {
       console.error("Error accessing camera:", err);
     }
@@ -71,15 +84,23 @@ if (startBtn) {
 if (document.getElementById("remoteVideo")) {
   onValue(ref(db, room + "/offer"), async snap => {
     if (!snap.exists()) return;
+
     try {
       const offer = snap.val();
+      console.log("Offer received from Firebase:", offer);
+
       await pc.setRemoteDescription(offer);
+      console.log("Offer set as remote description");
+
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
+      console.log("Answer created and local description set:", answer);
+
       set(ref(db, room + "/answer"), { type: answer.type, sdp: answer.sdp });
-      console.log("Viewer connected!");
+      console.log("Answer sent to Firebase");
+
     } catch (err) {
-      console.error("Error setting remote description:", err);
+      console.error("Error creating or sending answer:", err);
     }
   });
 }
@@ -90,6 +111,10 @@ if (document.getElementById("remoteVideo")) {
 onValue(ref(db, room + "/candidates"), snap => {
   snap.forEach(c => {
     const candidate = c.val();
-    if (candidate) pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
+    if (candidate) {
+      pc.addIceCandidate(new RTCIceCandidate(candidate))
+        .then(() => console.log("ICE candidate added:", candidate))
+        .catch(err => console.warn("ICE candidate add failed:", err));
+    }
   });
 });
