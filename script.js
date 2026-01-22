@@ -27,7 +27,10 @@ const pc = new RTCPeerConnection({
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 });
 
-// ---------- ICE Candidate ----------
+// ---------- ICE Candidate Queue ----------
+let remoteDescSet = false;
+let iceQueue = [];
+
 pc.onicecandidate = e => {
   if (e.candidate) {
     push(ref(db, room + "/candidates"), e.candidate.toJSON());
@@ -61,14 +64,20 @@ if (startBtn) {
       set(ref(db, room + "/offer"), { type: offer.type, sdp: offer.sdp });
       console.log("Offer sent to Firebase:", offer);
 
+      // Listener answer dari HP 2
       onValue(ref(db, room + "/answer"), snap => {
         if (snap.exists()) {
           pc.setRemoteDescription(snap.val())
-            .then(() => console.log("Answer received and set!"))
+            .then(() => {
+              console.log("Answer received and set!");
+              remoteDescSet = true; // remoteDescription sudah ada → bisa add candidate
+              // jalankan candidate queue
+              iceQueue.forEach(c => pc.addIceCandidate(new RTCIceCandidate(c)));
+              iceQueue = [];
+            })
             .catch(err => console.error("Error setting remote description:", err));
         }
       });
-
     } catch (err) {
       console.error("Error accessing camera:", err);
     }
@@ -100,6 +109,10 @@ if (remoteVideo) {
         set(ref(db, room + "/answer"), { type: answer.type, sdp: answer.sdp });
         console.log("Answer sent to Firebase");
         answered = true;
+
+        remoteDescSet = true; // remoteDescription siap → bisa add candidate
+        iceQueue.forEach(c => pc.addIceCandidate(new RTCIceCandidate(c)));
+        iceQueue = [];
       }
     } catch (err) {
       console.error("Error creating or sending answer:", err);
@@ -117,10 +130,14 @@ if (remoteVideo) {
 onValue(ref(db, room + "/candidates"), snap => {
   snap.forEach(c => {
     const candidate = c.val();
-    if (candidate) {
+    if (!candidate) return;
+
+    if (remoteDescSet) {
       pc.addIceCandidate(new RTCIceCandidate(candidate))
         .then(() => console.log("ICE candidate added:", candidate))
         .catch(err => console.warn("ICE candidate add failed:", err));
+    } else {
+      iceQueue.push(candidate); // simpan sementara sampai remoteDescription siap
     }
   });
 });
