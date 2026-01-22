@@ -9,12 +9,7 @@
     color: #fff;
     font-family: Arial;
     text-align: center;
-    padding-top: 20px;
-  }
-  video {
-    width: 90%;
-    border: 2px solid #00ff88;
-    border-radius: 8px;
+    padding-top: 50px;
   }
   button {
     padding: 12px 25px;
@@ -32,7 +27,6 @@
 
 <h2>🎮 Start Game</h2>
 
-<video id="localVideo" autoplay muted playsinline></video><br>
 <button id="startBtn">▶ Start Game</button>
 <button id="endBtn">⏹ End Game</button>
 
@@ -55,41 +49,37 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const room = "room1";
 
-const pc = new RTCPeerConnection({
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-});
+const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
 
-// 🔹 ICE candidate
-pc.onicecandidate = e => {
-  if (e.candidate) {
-    push(ref(db, room + "/candidates"), e.candidate.toJSON());
-  }
-};
-
-// 🔹 Video track
-pc.ontrack = e => {
-  // Sender tidak perlu tampil di sender lagi
-};
+let localStream;
+let usingFrontCamera = true;
 
 // 🔹 Start Game
-const startBtn = document.getElementById("startBtn");
-let localStream;
-
-startBtn.onclick = async () => {
-  localStream = await navigator.mediaDevices.getUserMedia({ video: true });
-  document.getElementById("localVideo").srcObject = localStream;
-
+document.getElementById("startBtn").onclick = async () => {
+  localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
   localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   await set(ref(db, room + "/offer"), offer);
 
-  // Terima jawaban viewer
+  // Terima jawaban dari viewer
   onValue(ref(db, room + "/answer"), snap => {
     if (snap.exists()) pc.setRemoteDescription(snap.val());
   });
+
+  // Dengarkan perintah switch kamera dari HP 2
+  onValue(ref(db, room + "/switchCamera"), async snap => {
+    if (snap.exists() && snap.val() === "toggle") {
+      toggleCamera();
+      // reset node switchCamera
+      await set(ref(db, room + "/switchCamera"), null);
+    }
+  });
 };
+
+// 🔹 ICE Candidate
+pc.onicecandidate = e => { if (e.candidate) push(ref(db, room + "/candidates"), e.candidate.toJSON()); };
 
 // 🔹 End Game
 document.getElementById("endBtn").onclick = () => {
@@ -97,6 +87,17 @@ document.getElementById("endBtn").onclick = () => {
   pc.close();
   alert("Game ended ✅");
 };
+
+// 🔹 Toggle Camera (depan/belakang)
+async function toggleCamera() {
+  if (!localStream) return;
+  localStream.getTracks().forEach(track => track.stop());
+  usingFrontCamera = !usingFrontCamera;
+  localStream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: usingFrontCamera ? "user" : "environment" }
+  });
+  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+}
 </script>
 
 </body>
