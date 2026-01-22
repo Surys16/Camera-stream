@@ -5,22 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Game Viewer</title>
 <style>
-  body { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; margin:0; background:#222; color:#fff; }
+  body { 
+    display:flex; flex-direction:column; align-items:center; justify-content:center; 
+    height:100vh; margin:0; background:#222; color:#fff; 
+    font-family:sans-serif;
+  }
   video { width:100%; max-width:500px; background:#000; }
   #controls { margin-top:10px; }
   button { margin:0 5px; padding:10px 20px; font-size:16px; cursor:pointer; }
   
+  /* Loading */
   #loadingContainer {
     position:absolute; top:50%; left:50%; transform:translate(-50%, -50%);
     text-align:center;
   }
   #loadingText { font-size:20px; margin-bottom:10px; }
-  #loadingBar {
-    width:300px; height:20px; background:#555; border-radius:10px; overflow:hidden;
-  }
-  #loadingProgress {
-    height:100%; width:0%; background:#4caf50; transition:width 0.1s;
-  }
+  #loadingBar { width:300px; height:20px; background:#555; border-radius:10px; overflow:hidden; }
+  #loadingProgress { height:100%; width:0%; background:#4caf50; transition:width 0.1s; }
 </style>
 </head>
 <body>
@@ -43,7 +44,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, push } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-// 🔥 Firebase Config
+/* 🔥 Firebase Config */
 const firebaseConfig = {
   apiKey: "AIzaSyCMD_qYKFZQZveZQL1NX7oj3oFuTsRxaYI",
   authDomain: "camera-stream-15427.firebaseapp.com",
@@ -56,56 +57,64 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
-
 const room = "room1";
-const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
 
+/* 🔹 DOM Elements */
 const remoteVideo = document.getElementById("remoteVideo");
 const loadingContainer = document.getElementById("loadingContainer");
 const loadingText = document.getElementById("loadingText");
 const loadingProgress = document.getElementById("loadingProgress");
+const shootBtn = document.getElementById("shootBtn");
+const switchBtn = document.getElementById("switchBtn");
+
+/* 🔹 WebRTC Setup */
+const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+
 let videoReady = false;
+let iceCount = 0;
 
-// 🔹 Simulasi progress 0 → 100%
-let progress = 0;
-const progressInterval = setInterval(() => {
-  if (videoReady || progress >= 100) {
-    clearInterval(progressInterval);
-    loadingContainer.style.display = "none";
-    return;
-  }
-  progress++;
-  loadingText.textContent = `Loading video... ${progress}%`;
-  loadingProgress.style.width = progress + "%";
-}, 50); // update tiap 50ms
+/* 🔹 Loading progress helper */
+function setProgress(value) {
+  const pct = Math.min(100, value);
+  loadingText.textContent = `Loading video... ${pct}%`;
+  loadingProgress.style.width = pct + "%";
+}
 
-// 🔹 Video ready
+/* 🔹 Video events */
 remoteVideo.onloadedmetadata = () => remoteVideo.play();
 remoteVideo.onplaying = () => {
   videoReady = true;
-  loadingText.textContent = "Video siap!";
-  loadingProgress.style.width = "100%";
-  setTimeout(() => loadingContainer.style.display = "none", 500);
+  setProgress(100);
+  setTimeout(() => loadingContainer.style.display = "none", 300);
 };
 
-// 📥 Terima video
-pc.ontrack = e => remoteVideo.srcObject = e.streams[0];
+/* 🔹 Track received */
+pc.ontrack = e => {
+  remoteVideo.srcObject = e.streams[0];
+  setProgress(50);
+};
 
-// 📤 Kirim ICE candidate
+/* 🔹 ICE candidates */
 pc.onicecandidate = e => {
-  if (e.candidate) push(ref(db, room + "/candidates"), e.candidate.toJSON());
+  if (e.candidate) {
+    iceCount++;
+    const iceProgress = Math.min(70, 30 + iceCount * 5);
+    setProgress(iceProgress);
+    push(ref(db, room + "/candidates"), e.candidate.toJSON());
+  }
 };
 
-// 📥 Terima offer dari HP 1
+/* 🔹 Receive offer from HP 1 */
 onValue(ref(db, room + "/offer"), async snap => {
   if (!snap.exists()) return;
   await pc.setRemoteDescription(snap.val());
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
   push(ref(db, room + "/answer"), answer);
+  setProgress(30); // remoteDescription diterima
 });
 
-// 📥 Terima ICE candidate
+/* 🔹 Receive ICE candidates */
 onValue(ref(db, room + "/candidates"), snap => {
   snap.forEach(c => {
     const candidate = new RTCIceCandidate(c.val());
@@ -113,25 +122,27 @@ onValue(ref(db, room + "/candidates"), snap => {
   });
 });
 
-// 🔹 Shoot
-document.getElementById("shootBtn").onclick = () => {
+/* 🔹 Shoot button */
+shootBtn.onclick = () => {
   if (!remoteVideo.srcObject) return alert("Video belum siap!");
   const canvas = document.createElement("canvas");
   canvas.width = remoteVideo.videoWidth;
   canvas.height = remoteVideo.videoHeight;
   canvas.getContext("2d").drawImage(remoteVideo, 0, 0);
   const dataUrl = canvas.toDataURL("image/png");
+
   const a = document.createElement("a");
   a.href = dataUrl;
   a.download = `shoot_${Date.now()}.png`;
   a.click();
 };
 
-// 🔹 Switch camera
-document.getElementById("switchBtn").onclick = () => {
+/* 🔹 Switch camera button */
+switchBtn.onclick = () => {
   push(ref(db, room + "/switchCamera"), "toggle");
 };
 
 </script>
+
 </body>
 </html>
