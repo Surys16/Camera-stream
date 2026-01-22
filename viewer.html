@@ -9,12 +9,28 @@
   video { width:100%; max-width:500px; background:#000; }
   #controls { margin-top:10px; }
   button { margin:0 5px; padding:10px 20px; font-size:16px; cursor:pointer; }
-  #loading { position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); font-size:20px; }
+  
+  #loadingContainer {
+    position:absolute; top:50%; left:50%; transform:translate(-50%, -50%);
+    text-align:center;
+  }
+  #loadingText { font-size:20px; margin-bottom:10px; }
+  #loadingBar {
+    width:300px; height:20px; background:#555; border-radius:10px; overflow:hidden;
+  }
+  #loadingProgress {
+    height:100%; width:0%; background:#4caf50; transition:width 0.1s;
+  }
 </style>
 </head>
 <body>
 
-<div id="loading">Loading video...</div>
+<div id="loadingContainer">
+  <div id="loadingText">Loading video... 0%</div>
+  <div id="loadingBar">
+    <div id="loadingProgress"></div>
+  </div>
+</div>
 
 <video id="remoteVideo" autoplay playsinline></video>
 
@@ -27,7 +43,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, push } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-// 🔥 CONFIG FIREBASE
+// 🔥 Firebase Config
 const firebaseConfig = {
   apiKey: "AIzaSyCMD_qYKFZQZveZQL1NX7oj3oFuTsRxaYI",
   authDomain: "camera-stream-15427.firebaseapp.com",
@@ -42,44 +58,54 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 const room = "room1";
-const pc = new RTCPeerConnection({
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-});
+const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
 
 const remoteVideo = document.getElementById("remoteVideo");
-const loading = document.getElementById("loading");
+const loadingContainer = document.getElementById("loadingContainer");
+const loadingText = document.getElementById("loadingText");
+const loadingProgress = document.getElementById("loadingProgress");
 let videoReady = false;
 
-// 🔹 Video loading indicator
+// 🔹 Simulasi progress 0 → 100%
+let progress = 0;
+const progressInterval = setInterval(() => {
+  if (videoReady || progress >= 100) {
+    clearInterval(progressInterval);
+    loadingContainer.style.display = "none";
+    return;
+  }
+  progress++;
+  loadingText.textContent = `Loading video... ${progress}%`;
+  loadingProgress.style.width = progress + "%";
+}, 50); // update tiap 50ms
+
+// 🔹 Video ready
 remoteVideo.onloadedmetadata = () => remoteVideo.play();
 remoteVideo.onplaying = () => {
   videoReady = true;
-  loading.style.display = "none";
+  loadingText.textContent = "Video siap!";
+  loadingProgress.style.width = "100%";
+  setTimeout(() => loadingContainer.style.display = "none", 500);
 };
 
 // 📥 Terima video
-pc.ontrack = e => {
-  remoteVideo.srcObject = e.streams[0];
-};
+pc.ontrack = e => remoteVideo.srcObject = e.streams[0];
 
-// 📤 Kirim ICE candidate ke Firebase
+// 📤 Kirim ICE candidate
 pc.onicecandidate = e => {
-  if (e.candidate) {
-    push(ref(db, room + "/candidates"), e.candidate.toJSON());
-  }
+  if (e.candidate) push(ref(db, room + "/candidates"), e.candidate.toJSON());
 };
 
 // 📥 Terima offer dari HP 1
 onValue(ref(db, room + "/offer"), async snap => {
   if (!snap.exists()) return;
-
   await pc.setRemoteDescription(snap.val());
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
   push(ref(db, room + "/answer"), answer);
 });
 
-// 📥 Terima ICE candidate dari HP 1
+// 📥 Terima ICE candidate
 onValue(ref(db, room + "/candidates"), snap => {
   snap.forEach(c => {
     const candidate = new RTCIceCandidate(c.val());
@@ -87,7 +113,7 @@ onValue(ref(db, room + "/candidates"), snap => {
   });
 });
 
-// 🔹 Shoot (ambil foto dari stream dan simpan di download)
+// 🔹 Shoot
 document.getElementById("shootBtn").onclick = () => {
   if (!remoteVideo.srcObject) return alert("Video belum siap!");
   const canvas = document.createElement("canvas");
@@ -95,19 +121,17 @@ document.getElementById("shootBtn").onclick = () => {
   canvas.height = remoteVideo.videoHeight;
   canvas.getContext("2d").drawImage(remoteVideo, 0, 0);
   const dataUrl = canvas.toDataURL("image/png");
-  
   const a = document.createElement("a");
   a.href = dataUrl;
   a.download = `shoot_${Date.now()}.png`;
   a.click();
 };
 
-// 🔹 Switch camera (meminta HP 1 ganti kamera)
+// 🔹 Switch camera
 document.getElementById("switchBtn").onclick = () => {
   push(ref(db, room + "/switchCamera"), "toggle");
 };
 
 </script>
-
 </body>
 </html>
