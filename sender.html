@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Game Camera</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background:#111; color:#fff; }
+    video { width: 90%; max-width: 500px; border:2px solid #fff; border-radius:8px; margin-bottom:10px; }
+    button { padding: 10px 20px; font-size: 16px; border-radius:5px; border:none; background:#00aaff; color:#fff; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <h1>Game Camera</h1>
+  <video id="localVideo" autoplay muted playsinline></video>
+  <button id="start">Start Camera</button>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import { getDatabase, ref, set, onValue, push, remove } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCMD_qYKFZQZveZQL1NX7oj3oFuTsRxaYI",
+      authDomain: "camera-stream-15427.firebaseapp.com",
+      databaseURL: "https://camera-stream-15427-default-rtdb.firebaseio.com",
+      projectId: "camera-stream-15427",
+      storageBucket: "camera-stream-15427.firebasestorage.app",
+      messagingSenderId: "437543558160",
+      appId: "1:437543558160:web:32a8d80fdcd95b0568fe95"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const room = "room1";
+    const pc = new RTCPeerConnection({ iceServers:[{urls:"stun:stun.l.google.com:19302"}] });
+
+    const localVideo = document.getElementById("localVideo");
+    const startBtn = document.getElementById("start");
+
+    pc.onicecandidate = e => { if(e.candidate) push(ref(db, room+"/candidates"), e.candidate.toJSON()); };
+    pc.ontrack = e => { console.log("Track received on sender?"); }; // sender biasanya tidak perlu track
+
+    remove(ref(db, room+"/candidates")); // clear old candidates
+
+    startBtn.onclick = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({video:true});
+      localVideo.srcObject = stream;
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      set(ref(db, room+"/offer"), { type: offer.type, sdp: offer.sdp });
+
+      console.log("Offer sent");
+
+      onValue(ref(db, room+"/answer"), snap => {
+        if(snap.exists()) pc.setRemoteDescription(snap.val()).then(()=>console.log("Answer set!"));
+      });
+    };
+  </script>
+</body>
+</html>
