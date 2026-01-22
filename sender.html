@@ -2,39 +2,45 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<title>Game Sender</title>
+<title>Start Game</title>
 <style>
   body {
-    background:#111;
-    color:#fff;
-    font-family:Arial;
-    text-align:center;
-    padding-top:40px;
+    background: #111;
+    color: #fff;
+    font-family: Arial;
+    text-align: center;
+    padding-top: 20px;
+  }
+  video {
+    width: 90%;
+    border: 2px solid #00ff88;
+    border-radius: 8px;
   }
   button {
-    padding:12px 25px;
-    font-size:16px;
-    margin:10px;
-    border:none;
-    border-radius:6px;
-    cursor:pointer;
-    background:#00aaff;
-    color:white;
+    padding: 12px 25px;
+    font-size: 16px;
+    margin: 12px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    background: #00ff88;
+    color: black;
   }
 </style>
 </head>
-
 <body>
 
-<h2>🎮 Game Sender</h2>
+<h2>🎮 Start Game</h2>
 
-<button id="startBtn">Start Game</button>
-<button id="endBtn">End Game</button>
+<video id="localVideo" autoplay muted playsinline></video><br>
+<button id="startBtn">▶ Start Game</button>
+<button id="endBtn">⏹ End Game</button>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, set, onValue, push } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
+// 🔹 Firebase Config
 const firebaseConfig = {
   apiKey: "AIzaSyCMD_qYKFZQZveZQL1NX7oj3oFuTsRxaYI",
   authDomain: "camera-stream-15427.firebaseapp.com",
@@ -49,40 +55,47 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const room = "room1";
 
-let pc;
-let stream;
+const pc = new RTCPeerConnection({
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+});
 
-document.getElementById("startBtn").onclick = async () => {
-  pc = new RTCPeerConnection({
-    iceServers: [{ urls:"stun:stun.l.google.com:19302" }]
-  });
+// 🔹 ICE candidate
+pc.onicecandidate = e => {
+  if (e.candidate) {
+    push(ref(db, room + "/candidates"), e.candidate.toJSON());
+  }
+};
 
-  pc.onicecandidate = e => {
-    if (e.candidate) {
-      push(ref(db, room + "/candidates"), e.candidate.toJSON());
-    }
-  };
+// 🔹 Video track
+pc.ontrack = e => {
+  // Sender tidak perlu tampil di sender lagi
+};
 
-  stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "environment" }
-  });
+// 🔹 Start Game
+const startBtn = document.getElementById("startBtn");
+let localStream;
 
-  stream.getTracks().forEach(track => pc.addTrack(track, stream));
+startBtn.onclick = async () => {
+  localStream = await navigator.mediaDevices.getUserMedia({ video: true });
+  document.getElementById("localVideo").srcObject = localStream;
+
+  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   await set(ref(db, room + "/offer"), offer);
 
+  // Terima jawaban viewer
   onValue(ref(db, room + "/answer"), snap => {
-    if (snap.exists()) {
-      pc.setRemoteDescription(snap.val());
-    }
+    if (snap.exists()) pc.setRemoteDescription(snap.val());
   });
 };
 
+// 🔹 End Game
 document.getElementById("endBtn").onclick = () => {
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  if (pc) pc.close();
+  localStream?.getTracks().forEach(track => track.stop());
+  pc.close();
+  alert("Game ended ✅");
 };
 </script>
 
