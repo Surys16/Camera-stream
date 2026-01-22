@@ -28,10 +28,9 @@
   <video id="remoteVideo" autoplay playsinline></video>
   <p>Menunggu kamera HP 1...</p>
 
-  <!-- Firebase + script.js -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-    import { getDatabase, ref, set, onValue, push, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+    import { getDatabase, ref, set, onValue, push, get, remove } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
     // 🔥 Firebase config
     const firebaseConfig = {
@@ -47,9 +46,6 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    // ======================
-    // WebRTC Setup
-    // ======================
     const room = "room1";
     const pc = new RTCPeerConnection({
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
@@ -59,6 +55,7 @@
     let answered = false;
     let remoteDescSet = false;
     let iceQueue = [];
+    let addedCandidates = new Set();
 
     // ---------- ICE Candidate
     pc.onicecandidate = e => {
@@ -76,6 +73,9 @@
       }
     };
 
+    // ---------- Clear old candidates
+    remove(ref(db, room + "/candidates"));
+
     // ---------- Force Trigger Answer
     const offerRef = ref(db, room + "/offer");
 
@@ -91,7 +91,7 @@
 
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          console.log("Answer created and local description set:", answer);
+          console.log("Answer created and local description set");
 
           set(ref(db, room + "/answer"), { type: answer.type, sdp: answer.sdp });
           console.log("Answer sent to Firebase");
@@ -99,8 +99,8 @@
           answered = true;
           remoteDescSet = true;
 
-          // Add ICE queue
-          iceQueue.forEach(c => pc.addIceCandidate(new RTCIceCandidate(c)));
+          // Add queued ICE candidates
+          iceQueue.forEach(c => addCandidateSafe(c));
           iceQueue = [];
         }
       } catch (err) {
@@ -111,15 +111,25 @@
     };
     checkOffer();
 
+    // ---------- Add ICE candidate safely
+    const addCandidateSafe = candidate => {
+      const key = candidate.candidate + candidate.sdpMid + candidate.sdpMLineIndex;
+      if (addedCandidates.has(key)) return; // skip duplicates
+      pc.addIceCandidate(new RTCIceCandidate(candidate))
+        .then(() => {
+          addedCandidates.add(key);
+          console.log("ICE candidate added:", candidate);
+        })
+        .catch(err => console.warn("ICE candidate failed:", candidate, err));
+    };
+
     // ---------- Listen ICE Candidates
     onValue(ref(db, room + "/candidates"), snap => {
       snap.forEach(c => {
         const candidate = c.val();
         if (!candidate) return;
         if (remoteDescSet) {
-          pc.addIceCandidate(new RTCIceCandidate(candidate))
-            .then(() => console.log("ICE candidate added:", candidate))
-            .catch(err => console.warn("ICE candidate add failed:", err));
+          addCandidateSafe(candidate);
         } else {
           iceQueue.push(candidate);
         }
