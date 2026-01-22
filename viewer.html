@@ -5,26 +5,26 @@
 <title>Game Viewer</title>
 <style>
   body {
-    background:#111;
-    color:#fff;
-    font-family:Arial;
-    text-align:center;
-    padding-top:20px;
+    background: #111;
+    color: #fff;
+    font-family: Arial;
+    text-align: center;
+    padding-top: 20px;
   }
   video {
-    width:90%;
-    border:2px solid #00aaff;
-    border-radius:8px;
+    width: 90%;
+    border: 2px solid #00aaff;
+    border-radius: 8px;
   }
   button {
-    padding:12px 25px;
-    font-size:16px;
-    margin:12px;
-    border:none;
-    border-radius:6px;
-    cursor:pointer;
-    background:#00aaff;
-    color:white;
+    padding: 12px 20px;
+    font-size: 16px;
+    margin: 8px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    background: #00aaff;
+    color: white;
   }
 </style>
 </head>
@@ -35,11 +35,14 @@
 
 <video id="remoteVideo" autoplay playsinline></video><br>
 <button id="shootBtn">📸 Shoot</button>
+<button id="switchBtn">🔄 Switch Camera</button>
+<button id="endBtn">⏹ End Game</button>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import { getDatabase, ref, onValue, push } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { getDatabase, ref, onValue, set, push } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
+// 🔹 Firebase Config
 const firebaseConfig = {
   apiKey: "AIzaSyCMD_qYKFZQZveZQL1NX7oj3oFuTsRxaYI",
   authDomain: "camera-stream-15427.firebaseapp.com",
@@ -55,55 +58,70 @@ const db = getDatabase(app);
 const room = "room1";
 
 const pc = new RTCPeerConnection({
-  iceServers: [{ urls:"stun:stun.l.google.com:19302" }]
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 });
 
 const video = document.getElementById("remoteVideo");
+let videoReady = false;
+let usingFrontCamera = true;
 
-pc.ontrack = e => {
-  video.srcObject = e.streams[0];
-};
+// 🔹 Video ready handling
+video.onloadedmetadata = () => video.play().catch(err => console.warn(err));
+video.onplaying = () => { videoReady = true; console.log("Video siap di-shoot ✅"); };
 
-pc.onicecandidate = e => {
-  if (e.candidate) {
-    push(ref(db, room + "/candidates"), e.candidate.toJSON());
-  }
-};
+// 🔹 Terima track video dari HP 1
+pc.ontrack = e => { video.srcObject = e.streams[0]; };
 
+// 🔹 ICE candidates
+pc.onicecandidate = e => { if (e.candidate) push(ref(db, room + "/candidates"), e.candidate.toJSON()); };
+
+// 🔹 Terima offer & kirim answer
 onValue(ref(db, room + "/offer"), async snap => {
   if (!snap.exists()) return;
-
   await pc.setRemoteDescription(snap.val());
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
   await set(ref(db, room + "/answer"), answer);
 });
 
+// 🔹 Tambahkan ICE candidates
 onValue(ref(db, room + "/candidates"), snap => {
   snap.forEach(c => {
-    pc.addIceCandidate(new RTCIceCandidate(c.val())).catch(()=>{});
+    pc.addIceCandidate(new RTCIceCandidate(c.val())).catch(err => console.warn(err));
   });
 });
 
-// 📸 SHOOT & DOWNLOAD
+// 🔹 SHOOT
 document.getElementById("shootBtn").onclick = () => {
-  if (video.readyState < 2) return alert("Video belum siap");
-
+  if (!videoReady) { alert("Video belum siap, tunggu sebentar..."); return; }
   const canvas = document.createElement("canvas");
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
-
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(video, 0, 0);
-
-  const img = canvas.toDataURL("image/png");
-
+  canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+  const imgData = canvas.toDataURL("image/png");
   const a = document.createElement("a");
-  a.href = img;
+  a.href = imgData;
   a.download = "shoot_" + Date.now() + ".png";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+};
+
+// 🔹 SWITCH CAMERA (depan/belakang)
+document.getElementById("switchBtn").onclick = async () => {
+  const tracks = video.srcObject?.getTracks() || [];
+  tracks.forEach(track => track.stop());
+  usingFrontCamera = !usingFrontCamera;
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: usingFrontCamera ? "user" : "environment" } });
+  stream.getTracks().forEach(track => pc.addTrack(track, stream));
+  video.srcObject = stream;
+};
+
+// 🔹 END GAME
+document.getElementById("endBtn").onclick = () => {
+  video.srcObject?.getTracks().forEach(track => track.stop());
+  pc.close();
+  alert("Game ended ✅");
 };
 </script>
 
