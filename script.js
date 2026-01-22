@@ -4,7 +4,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, set, onValue, push } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-// ⛔ Firebase config kamu
+// Firebase config kamu
 const firebaseConfig = {
   apiKey: "AIzaSyCMD_qYKFZQZveZQL1NX7oj3oFuTsRxaYI",
   authDomain: "camera-stream-15427.firebaseapp.com",
@@ -52,18 +52,15 @@ if (startBtn) {
   startBtn.onclick = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      document.getElementById("localVideo").srcObject = stream; // preview hidden
+      document.getElementById("localVideo").srcObject = stream;
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
       console.log("Local camera started");
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-
-      // simpan OFFER ke Firebase (hanya type + sdp)
       set(ref(db, room + "/offer"), { type: offer.type, sdp: offer.sdp });
       console.log("Offer sent to Firebase:", offer);
 
-      // listen ANSWER dari HP 2
       onValue(ref(db, room + "/answer"), snap => {
         if (snap.exists()) {
           pc.setRemoteDescription(snap.val())
