@@ -1,107 +1,91 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Game Viewer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body { 
-      font-family: sans-serif; 
-      margin:0; 
-      background:#111; 
-      display:flex; 
-      flex-direction:column; 
-      align-items:center; 
-      justify-content:center; 
-      height:100vh; 
-      color:#fff; 
-      position: relative;
-    }
-    video { 
-      width: 90%; 
-      max-width: 480px; 
-      border: 2px solid #00aaff; 
-      border-radius: 8px; 
-      background: #000;
-    }
-    img.snapshot {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      width: 160px;
-      border: 2px solid #00aaff;
-      border-radius: 8px;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>Game Viewer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { font-family:sans-serif; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:#111; color:#fff;}
+video, img { max-width:90vw; margin-top:10px; border:2px solid #00aaff; }
+button { padding:8px 16px; margin:5px; border:none; border-radius:5px; background:#00aaff; color:#fff; font-size:14px; cursor:pointer;}
+</style>
 </head>
 <body>
-  <h1>Game Viewer</h1>
-  <video id="remoteVideo" autoplay playsinline></video>
-  <img class="snapshot" id="snapshotImg" src="" alt="Snapshot"/>
+<h1>Game Viewer</h1>
+<video id="remoteVideo" autoplay playsinline></video>
+<img id="snapshot" />
+<video id="localCamera" autoplay playsinline muted style="max-width:90vw; border:2px solid #ffaa00;"></video>
+<button id="switchCam">Switch Camera</button>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-    import { getDatabase, ref, set, onValue, push } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+import { getDatabase, ref, onValue, push, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-    // ===== Firebase Config =====
-    const firebaseConfig = {
-      apiKey: "AIzaSyCMD_qYKFZQZveZQL1NX7oj3oFuTsRxaYI",
-      authDomain: "camera-stream-15427.firebaseapp.com",
-      databaseURL: "https://camera-stream-15427-default-rtdb.firebaseio.com",
-      projectId: "camera-stream-15427",
-      storageBucket: "camera-stream-15427.firebasestorage.app",
-      messagingSenderId: "437543558160",
-      appId: "1:437543558160:web:32a8d80fdcd95b0568fe95"
-    };
+// ===== Firebase Config =====
+const firebaseConfig = {
+  apiKey: "AIzaSyCMD_qYKFZQZveZQL1NX7oj3oFuTsRxaYI",
+  authDomain: "camera-stream-15427.firebaseapp.com",
+  databaseURL: "https://camera-stream-15427-default-rtdb.firebaseio.com",
+  projectId: "camera-stream-15427",
+  storageBucket: "camera-stream-15427.firebasestorage.app",
+  messagingSenderId: "437543558160",
+  appId: "1:437543558160:web:32a8d80fdcd95b0568fe95"
+};
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-    const room = "room1";
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const room = "room1";
 
-    const pc = new RTCPeerConnection({ iceServers:[{urls:"stun:stun.l.google.com:19302"}] });
-    const remoteVideo = document.getElementById("remoteVideo");
-    const snapshotImg = document.getElementById("snapshotImg");
+const remoteVideo = document.getElementById("remoteVideo");
+const snapshotImg = document.getElementById("snapshot");
+const localCamera = document.getElementById("localCamera");
+const switchBtn = document.getElementById("switchCam");
 
-    // ===== Terima ICE =====
-    onValue(ref(db, room+"/candidates"), snap => {
-      snap.forEach(c => {
-        pc.addIceCandidate(new RTCIceCandidate(c.val()))
-          .then(()=>console.log("ICE candidate added:", c.val()))
-          .catch(err=>console.warn("ICE candidate add failed:", err));
-      });
-    });
+let pc = new RTCPeerConnection({ iceServers:[{urls:"stun:stun.l.google.com:19302"}] });
+let localStream;
+let useBackCamera = false; // default depan
 
-    // ===== Terima Video =====
-    pc.ontrack = e => {
-      remoteVideo.srcObject = e.streams[0];
-    };
+// Terima video sender
+pc.ontrack = e => { remoteVideo.srcObject = e.streams[0]; };
 
-    // ===== Terima Offer & Kirim Answer =====
-    onValue(ref(db, room+"/offer"), async snap => {
-      if(!snap.exists()) return;
+// ICE candidate sender
+pc.onicecandidate = e => { if(e.candidate) push(ref(db, room+"/candidates"), e.candidate.toJSON()); };
 
-      const offer = snap.val();
-      await pc.setRemoteDescription(offer);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      set(ref(db, room+"/answer"), { type: answer.type, sdp: answer.sdp });
-      console.log("Answer sent!");
-    });
+// Terima offer
+onValue(ref(db, room+"/offer"), async snap => {
+  if(!snap.exists()) return;
+  await pc.setRemoteDescription(snap.val());
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  set(ref(db, room+"/answer"), { type:answer.type, sdp:answer.sdp });
+});
 
-    // ===== Terima Snapshot =====
-    onValue(ref(db, room+"/snapshot"), snap => {
-      if(snap.exists()){
-        const data = snap.val();
-        snapshotImg.src = data.image;
-      }
-    });
+// Terima ICE sender
+onValue(ref(db, room+"/candidates"), snap => {
+  snap.forEach(c => { pc.addIceCandidate(c.val()).catch(e=>console.warn("ICE failed", e)); });
+});
 
-    // ===== Kirim ICE =====
-    pc.onicecandidate = e => {
-      if(e.candidate){
-        push(ref(db, room+"/candidates"), e.candidate.toJSON());
-      }
-    };
-  </script>
+// Terima snapshot
+onValue(ref(db, room+"/snapshot"), snap => {
+  if(snap.exists()) snapshotImg.src = snap.val().image;
+});
+
+// ===== Switch Camera =====
+async function startLocalCamera() {
+  if(localStream) localStream.getTracks().forEach(t => t.stop());
+  const constraints = { video:{ facingMode: useBackCamera ? "environment" : "user" } };
+  localStream = await navigator.mediaDevices.getUserMedia(constraints);
+  localCamera.srcObject = localStream;
+}
+
+switchBtn.onclick = async () => {
+  useBackCamera = !useBackCamera;
+  await startLocalCamera();
+};
+
+// Start default camera
+startLocalCamera();
+
+</script>
 </body>
 </html>
