@@ -1,27 +1,65 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
 <meta charset="UTF-8">
-<title>Game Viewer</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Game Viewer</title>
+
 <style>
-body { font-family:sans-serif; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:#111; color:#fff;}
-video, img { max-width:90vw; margin-top:10px; border:2px solid #00aaff; }
-button { padding:8px 16px; margin:5px; border:none; border-radius:5px; background:#00aaff; color:#fff; font-size:14px; cursor:pointer;}
+  body {
+    margin:0;
+    background:#111;
+    color:#fff;
+    font-family:Arial, sans-serif;
+    text-align:center;
+  }
+
+  h2 { margin:10px 0; }
+
+  video, img {
+    width:95%;
+    max-width:480px;
+    margin:8px auto;
+    display:block;
+    border:2px solid #00aaff;
+    border-radius:8px;
+  }
+
+  button {
+    width:95%;
+    max-width:300px;
+    padding:14px;
+    margin:8px auto;
+    font-size:16px;
+    border:none;
+    border-radius:8px;
+    background:#00aaff;
+    color:white;
+  }
 </style>
 </head>
+
 <body>
-<h1>Game Viewer</h1>
+
+<h2>🎮 Game Viewer</h2>
+
+<!-- VIDEO DARI HP 1 -->
 <video id="remoteVideo" autoplay playsinline></video>
+
+<!-- HASIL SHOOT -->
 <img id="snapshot" />
-<video id="localCamera" autoplay playsinline muted style="max-width:90vw; border:2px solid #ffaa00;"></video>
-<button id="switchCam">Switch Camera</button>
+
+<!-- KAMERA HP 2 -->
+<video id="localCamera" autoplay playsinline muted></video>
+
+<!-- TOMBOL SWITCH -->
+<button id="switchCam">🔄 Switch Camera</button>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, push, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-// ===== Firebase Config =====
+/* FIREBASE */
 const firebaseConfig = {
   apiKey: "AIzaSyCMD_qYKFZQZveZQL1NX7oj3oFuTsRxaYI",
   authDomain: "camera-stream-15427.firebaseapp.com",
@@ -36,56 +74,59 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const room = "room1";
 
+/* ELEMENT */
 const remoteVideo = document.getElementById("remoteVideo");
 const snapshotImg = document.getElementById("snapshot");
 const localCamera = document.getElementById("localCamera");
 const switchBtn = document.getElementById("switchCam");
 
-let pc = new RTCPeerConnection({ iceServers:[{urls:"stun:stun.l.google.com:19302"}] });
-let localStream;
-let useBackCamera = false; // default depan
+/* WEBRTC */
+const pc = new RTCPeerConnection({
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+});
 
-// Terima video sender
-pc.ontrack = e => { remoteVideo.srcObject = e.streams[0]; };
+pc.ontrack = e => remoteVideo.srcObject = e.streams[0];
+pc.onicecandidate = e => {
+  if (e.candidate) push(ref(db, room+"/candidates"), e.candidate.toJSON());
+};
 
-// ICE candidate sender
-pc.onicecandidate = e => { if(e.candidate) push(ref(db, room+"/candidates"), e.candidate.toJSON()); };
-
-// Terima offer
 onValue(ref(db, room+"/offer"), async snap => {
-  if(!snap.exists()) return;
+  if (!snap.exists()) return;
   await pc.setRemoteDescription(snap.val());
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
-  set(ref(db, room+"/answer"), { type:answer.type, sdp:answer.sdp });
+  set(ref(db, room+"/answer"), answer);
 });
 
-// Terima ICE sender
 onValue(ref(db, room+"/candidates"), snap => {
-  snap.forEach(c => { pc.addIceCandidate(c.val()).catch(e=>console.warn("ICE failed", e)); });
+  snap.forEach(c =>
+    pc.addIceCandidate(c.val()).catch(()=>{})
+  );
 });
 
-// Terima snapshot
 onValue(ref(db, room+"/snapshot"), snap => {
-  if(snap.exists()) snapshotImg.src = snap.val().image;
+  if (snap.exists()) snapshotImg.src = snap.val().image;
 });
 
-// ===== Switch Camera =====
-async function startLocalCamera() {
-  if(localStream) localStream.getTracks().forEach(t => t.stop());
-  const constraints = { video:{ facingMode: useBackCamera ? "environment" : "user" } };
-  localStream = await navigator.mediaDevices.getUserMedia(constraints);
+/* SWITCH CAMERA */
+let useBack = false;
+let localStream;
+
+async function startCamera() {
+  if (localStream) localStream.getTracks().forEach(t => t.stop());
+  localStream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: useBack ? "environment" : "user" }
+  });
   localCamera.srcObject = localStream;
 }
 
 switchBtn.onclick = async () => {
-  useBackCamera = !useBackCamera;
-  await startLocalCamera();
+  useBack = !useBack;
+  await startCamera();
 };
 
-// Start default camera
-startLocalCamera();
-
+startCamera();
 </script>
+
 </body>
 </html>
