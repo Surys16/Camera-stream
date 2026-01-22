@@ -2,16 +2,130 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Game</title>
+  <title>Game Viewer</title>
   <style>
-    body { text-align: center; font-family: sans-serif; }
-    video { width: 100%; max-width: 500px; margin-top: 20px; border: 2px solid #333; }
+    body {
+      font-family: sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      flex-direction: column;
+      background: #111;
+      color: #fff;
+    }
+    video {
+      width: 90%;
+      max-width: 500px;
+      border: 2px solid #fff;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
   </style>
 </head>
 <body>
-  <h2>Game 2 — Live Game Viewer</h2>
+  <h1>Game Viewer</h1>
   <video id="remoteVideo" autoplay playsinline></video>
+  <p>Menunggu kamera HP 1...</p>
 
-  <script type="module" src="script.js"></script>
+  <!-- Firebase + script.js -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import { getDatabase, ref, set, onValue, push, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+    // 🔥 Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyCMD_qYKFZQZveZQL1NX7oj3oFuTsRxaYI",
+      authDomain: "camera-stream-15427.firebaseapp.com",
+      databaseURL: "https://camera-stream-15427-default-rtdb.firebaseio.com",
+      projectId: "camera-stream-15427",
+      storageBucket: "camera-stream-15427.firebasestorage.app",
+      messagingSenderId: "437543558160",
+      appId: "1:437543558160:web:32a8d80fdcd95b0568fe95"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // ======================
+    // WebRTC Setup
+    // ======================
+    const room = "room1";
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    });
+
+    const remoteVideo = document.getElementById("remoteVideo");
+    let answered = false;
+    let remoteDescSet = false;
+    let iceQueue = [];
+
+    // ---------- ICE Candidate
+    pc.onicecandidate = e => {
+      if (e.candidate) {
+        push(ref(db, room + "/candidates"), e.candidate.toJSON());
+        console.log("New ICE candidate pushed:", e.candidate);
+      }
+    };
+
+    // ---------- Remote Track
+    pc.ontrack = e => {
+      if (remoteVideo) {
+        remoteVideo.srcObject = e.streams[0];
+        console.log("Remote video stream received!");
+      }
+    };
+
+    // ---------- Force Trigger Answer
+    const offerRef = ref(db, room + "/offer");
+
+    const checkOffer = async () => {
+      try {
+        const snap = await get(offerRef);
+        if (snap.exists() && !answered) {
+          const offer = snap.val();
+          console.log("Offer received from Firebase:", offer);
+
+          await pc.setRemoteDescription(offer);
+          console.log("Offer set as remote description");
+
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          console.log("Answer created and local description set:", answer);
+
+          set(ref(db, room + "/answer"), { type: answer.type, sdp: answer.sdp });
+          console.log("Answer sent to Firebase");
+
+          answered = true;
+          remoteDescSet = true;
+
+          // Add ICE queue
+          iceQueue.forEach(c => pc.addIceCandidate(new RTCIceCandidate(c)));
+          iceQueue = [];
+        }
+      } catch (err) {
+        console.error("Error creating or sending answer:", err);
+      } finally {
+        setTimeout(checkOffer, 1000);
+      }
+    };
+    checkOffer();
+
+    // ---------- Listen ICE Candidates
+    onValue(ref(db, room + "/candidates"), snap => {
+      snap.forEach(c => {
+        const candidate = c.val();
+        if (!candidate) return;
+        if (remoteDescSet) {
+          pc.addIceCandidate(new RTCIceCandidate(candidate))
+            .then(() => console.log("ICE candidate added:", candidate))
+            .catch(err => console.warn("ICE candidate add failed:", err));
+        } else {
+          iceQueue.push(candidate);
+        }
+      });
+    });
+
+  </script>
 </body>
 </html>
