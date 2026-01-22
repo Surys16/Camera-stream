@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <title>Game Viewer</title>
 <style>
-  body { background:#111; color:#fff; font-family:Arial; text-align:center; padding-top:20px; }
-  video { width:90%; border:2px solid #00aaff; border-radius:8px; }
-  button { padding:12px 20px; font-size:16px; margin:8px; border:none; border-radius:6px; cursor:pointer; background:#00aaff; color:white; }
+body { background:#111; color:#fff; font-family:Arial; text-align:center; padding-top:20px; }
+video { width:90%; border:2px solid #00aaff; border-radius:8px; }
+button { padding:12px 20px; font-size:16px; margin:8px; border:none; border-radius:6px; cursor:pointer; background:#00aaff; color:white; }
 </style>
 </head>
 <body>
@@ -36,15 +36,19 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const room = "room1";
 
-const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+const pc = new RTCPeerConnection({ iceServers:[{urls:"stun:stun.l.google.com:19302"}] });
 
 const video = document.getElementById("remoteVideo");
 let videoReady = false;
 
-video.onloadedmetadata = () => video.play().catch(err => console.warn(err));
-video.onplaying = () => { videoReady = true; console.log("Video siap di-shoot ✅"); };
+pc.ontrack = e => {
+  video.srcObject = e.streams[0];
+  video.onplaying = () => {
+    videoReady = true;
+    console.log("Video sudah siap ✅");
+  };
+};
 
-pc.ontrack = e => { video.srcObject = e.streams[0]; };
 pc.onicecandidate = e => { if (e.candidate) push(ref(db, room + "/candidates"), e.candidate.toJSON()); };
 
 // Terima offer dari HP1 & kirim answer
@@ -78,7 +82,7 @@ document.getElementById("shootBtn").onclick = () => {
   document.body.removeChild(a);
 };
 
-// SWITCH CAMERA HP 1
+// SWITCH CAMERA HP1
 document.getElementById("switchBtn").onclick = async () => {
   await set(ref(db, room + "/switchCamera"), "toggle");
 };
