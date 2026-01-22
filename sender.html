@@ -4,23 +4,12 @@
 <meta charset="UTF-8">
 <title>Start Game</title>
 <style>
-  body {
-    background: #111;
-    color: #fff;
-    font-family: Arial;
-    text-align: center;
-    padding-top: 50px;
-  }
-  button {
-    padding: 12px 25px;
-    font-size: 16px;
-    margin: 12px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    background: #00ff88;
-    color: black;
-  }
+body {
+  background:#111; color:#fff; font-family:Arial; text-align:center; padding-top:50px;
+}
+button {
+  padding:12px 25px; font-size:16px; margin:12px; border:none; border-radius:6px; cursor:pointer; background:#00ff88; color:black;
+}
 </style>
 </head>
 <body>
@@ -49,30 +38,42 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const room = "room1";
 
-const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+const pc = new RTCPeerConnection({ iceServers:[{urls:"stun:stun.l.google.com:19302"}] });
 
 let localStream;
 let usingFrontCamera = true;
+let wakeLock;
+
+// 🔹 Request Wake Lock
+async function requestWakeLock() {
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    console.log('Wake Lock aktif ✅');
+    wakeLock.addEventListener('release', () => console.log('Wake Lock dilepas ⚠️'));
+  } catch (err) {
+    console.error('Wake Lock gagal ❌', err);
+  }
+}
 
 // 🔹 Start Game
 document.getElementById("startBtn").onclick = async () => {
-  localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+  await requestWakeLock();
+  localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode:"user" }, audio:false });
   localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   await set(ref(db, room + "/offer"), offer);
 
-  // Terima jawaban dari viewer
+  // Terima jawaban viewer
   onValue(ref(db, room + "/answer"), snap => {
     if (snap.exists()) pc.setRemoteDescription(snap.val());
   });
 
-  // Dengarkan perintah switch kamera dari HP 2
+  // Dengarkan perintah switch kamera
   onValue(ref(db, room + "/switchCamera"), async snap => {
-    if (snap.exists() && snap.val() === "toggle") {
+    if (snap.exists() && snap.val()==="toggle") {
       toggleCamera();
-      // reset node switchCamera
       await set(ref(db, room + "/switchCamera"), null);
     }
   });
@@ -85,16 +86,18 @@ pc.onicecandidate = e => { if (e.candidate) push(ref(db, room + "/candidates"), 
 document.getElementById("endBtn").onclick = () => {
   localStream?.getTracks().forEach(track => track.stop());
   pc.close();
+  wakeLock?.release();
   alert("Game ended ✅");
 };
 
-// 🔹 Toggle Camera (depan/belakang)
+// 🔹 Toggle Camera
 async function toggleCamera() {
   if (!localStream) return;
   localStream.getTracks().forEach(track => track.stop());
   usingFrontCamera = !usingFrontCamera;
   localStream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: usingFrontCamera ? "user" : "environment" }
+    video: { facingMode: usingFrontCamera?"user":"environment" },
+    audio:false
   });
   localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 }
