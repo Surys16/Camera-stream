@@ -4,45 +4,24 @@
 <meta charset="UTF-8">
 <title>Game Viewer</title>
 <style>
-  body {
-    background: #111;
-    color: #fff;
-    font-family: Arial;
-    text-align: center;
-    padding-top: 20px;
-  }
-  video {
-    width: 90%;
-    border: 2px solid #00aaff;
-    border-radius: 8px;
-  }
-  button {
-    padding: 12px 20px;
-    font-size: 16px;
-    margin: 8px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    background: #00aaff;
-    color: white;
-  }
+  body { background:#111; color:#fff; font-family:Arial; text-align:center; padding-top:20px; }
+  video { width:90%; border:2px solid #00aaff; border-radius:8px; }
+  button { padding:12px 20px; font-size:16px; margin:8px; border:none; border-radius:6px; cursor:pointer; background:#00aaff; color:white; }
 </style>
 </head>
-
 <body>
 
 <h2>👀 Game Viewer</h2>
 
 <video id="remoteVideo" autoplay playsinline></video><br>
 <button id="shootBtn">📸 Shoot</button>
-<button id="switchBtn">🔄 Switch Camera</button>
+<button id="switchBtn">🔄 Switch Camera HP 1</button>
 <button id="endBtn">⏹ End Game</button>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, onValue, set, push } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-// 🔹 Firebase Config
 const firebaseConfig = {
   apiKey: "AIzaSyCMD_qYKFZQZveZQL1NX7oj3oFuTsRxaYI",
   authDomain: "camera-stream-15427.firebaseapp.com",
@@ -57,25 +36,18 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const room = "room1";
 
-const pc = new RTCPeerConnection({
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-});
+const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
 
 const video = document.getElementById("remoteVideo");
 let videoReady = false;
-let usingFrontCamera = true;
 
-// 🔹 Video ready handling
 video.onloadedmetadata = () => video.play().catch(err => console.warn(err));
 video.onplaying = () => { videoReady = true; console.log("Video siap di-shoot ✅"); };
 
-// 🔹 Terima track video dari HP 1
 pc.ontrack = e => { video.srcObject = e.streams[0]; };
-
-// 🔹 ICE candidates
 pc.onicecandidate = e => { if (e.candidate) push(ref(db, room + "/candidates"), e.candidate.toJSON()); };
 
-// 🔹 Terima offer & kirim answer
+// Terima offer dari HP1 & kirim answer
 onValue(ref(db, room + "/offer"), async snap => {
   if (!snap.exists()) return;
   await pc.setRemoteDescription(snap.val());
@@ -84,40 +56,34 @@ onValue(ref(db, room + "/offer"), async snap => {
   await set(ref(db, room + "/answer"), answer);
 });
 
-// 🔹 Tambahkan ICE candidates
+// Tambahkan ICE candidates
 onValue(ref(db, room + "/candidates"), snap => {
   snap.forEach(c => {
     pc.addIceCandidate(new RTCIceCandidate(c.val())).catch(err => console.warn(err));
   });
 });
 
-// 🔹 SHOOT
+// SHOOT
 document.getElementById("shootBtn").onclick = () => {
-  if (!videoReady) { alert("Video belum siap, tunggu sebentar..."); return; }
+  if (!videoReady) { alert("Video belum siap"); return; }
   const canvas = document.createElement("canvas");
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-  const imgData = canvas.toDataURL("image/png");
   const a = document.createElement("a");
-  a.href = imgData;
+  a.href = canvas.toDataURL("image/png");
   a.download = "shoot_" + Date.now() + ".png";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
 };
 
-// 🔹 SWITCH CAMERA (depan/belakang)
+// SWITCH CAMERA HP 1
 document.getElementById("switchBtn").onclick = async () => {
-  const tracks = video.srcObject?.getTracks() || [];
-  tracks.forEach(track => track.stop());
-  usingFrontCamera = !usingFrontCamera;
-  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: usingFrontCamera ? "user" : "environment" } });
-  stream.getTracks().forEach(track => pc.addTrack(track, stream));
-  video.srcObject = stream;
+  await set(ref(db, room + "/switchCamera"), "toggle");
 };
 
-// 🔹 END GAME
+// END GAME
 document.getElementById("endBtn").onclick = () => {
   video.srcObject?.getTracks().forEach(track => track.stop());
   pc.close();
