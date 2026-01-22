@@ -1,27 +1,132 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TEST VIEWER</title>
+<title>Game Viewer</title>
+
 <style>
   body {
-    background: red;
-    color: white;
-    text-align: center;
-    font-size: 24px;
+    margin:0;
+    background:#111;
+    color:white;
+    font-family: Arial, sans-serif;
+    text-align:center;
   }
+  h2 { margin:10px; }
+
+  video, img {
+    width:95%;
+    max-width:480px;
+    margin:8px auto;
+    display:block;
+    border:2px solid #00aaff;
+    border-radius:10px;
+  }
+
   button {
-    font-size: 24px;
-    padding: 20px;
-    margin-top: 40px;
+    width:90%;
+    max-width:320px;
+    padding:15px;
+    font-size:18px;
+    margin:10px auto;
+    border:none;
+    border-radius:10px;
+    background:#00aaff;
+    color:white;
   }
 </style>
 </head>
+
 <body>
 
-<h1>INI VIEWER</h1>
+<h2>🎮 Game Viewer</h2>
 
-<button>SAYA TOMBOL SWITCH</button>
+<!-- VIDEO DARI HP 1 -->
+<video id="remoteVideo" autoplay playsinline></video>
+
+<!-- HASIL SHOOT -->
+<img id="snapshot" />
+
+<!-- KAMERA HP 2 -->
+<video id="localCamera" autoplay playsinline muted></video>
+
+<!-- SWITCH -->
+<button id="switchCam">🔄 Switch Kamera</button>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+import { getDatabase, ref, onValue, push, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+/* FIREBASE */
+const firebaseConfig = {
+  apiKey: "AIzaSyCMD_qYKFZQZveZQL1NX7oj3oFuTsRxaYI",
+  authDomain: "camera-stream-15427.firebaseapp.com",
+  databaseURL: "https://camera-stream-15427-default-rtdb.firebaseio.com",
+  projectId: "camera-stream-15427",
+  storageBucket: "camera-stream-15427.firebasestorage.app",
+  messagingSenderId: "437543558160",
+  appId: "1:437543558160:web:32a8d80fdcd95b0568fe95"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const room = "room1";
+
+/* ELEMENT */
+const remoteVideo = document.getElementById("remoteVideo");
+const snapshotImg = document.getElementById("snapshot");
+const localCamera = document.getElementById("localCamera");
+const switchBtn = document.getElementById("switchCam");
+
+/* WEBRTC */
+const pc = new RTCPeerConnection({
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+});
+
+pc.ontrack = e => remoteVideo.srcObject = e.streams[0];
+pc.onicecandidate = e => {
+  if (e.candidate) push(ref(db, room + "/candidates"), e.candidate.toJSON());
+};
+
+onValue(ref(db, room + "/offer"), async snap => {
+  if (!snap.exists()) return;
+  await pc.setRemoteDescription(snap.val());
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  set(ref(db, room + "/answer"), answer);
+});
+
+onValue(ref(db, room + "/candidates"), snap => {
+  snap.forEach(c => {
+    pc.addIceCandidate(c.val()).catch(()=>{});
+  });
+});
+
+onValue(ref(db, room + "/snapshot"), snap => {
+  if (snap.exists()) snapshotImg.src = snap.val().image;
+});
+
+/* SWITCH CAMERA (HP 2) */
+let backCamera = false;
+let localStream;
+
+async function startCamera() {
+  if (localStream) localStream.getTracks().forEach(t => t.stop());
+  localStream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: backCamera ? "environment" : "user" }
+  });
+  localCamera.srcObject = localStream;
+}
+
+switchBtn.onclick = async () => {
+  backCamera = !backCamera;
+  await startCamera();
+};
+
+// start default camera
+startCamera();
+</script>
 
 </body>
 </html>
